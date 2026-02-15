@@ -13,17 +13,22 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/opencode-ai/opencode-dog/internal/db"
 )
 
 type SlackProvider struct {
+	database   *db.DB
 	logger     *slog.Logger
 	httpClient *http.Client
 }
 
-func NewSlackProvider(logger *slog.Logger) *SlackProvider {
+func NewSlackProvider(database *db.DB, logger *slog.Logger) *SlackProvider {
+	timeout := database.GetSettingDuration(context.Background(), "slack_http_timeout", 30*time.Second)
 	return &SlackProvider{
+		database:   database,
 		logger:     logger,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: &http.Client{Timeout: timeout},
 	}
 }
 
@@ -44,11 +49,11 @@ type slackEvent struct {
 	Challenge string `json:"challenge"`
 	Type      string `json:"type"`
 	Event     struct {
-		Type    string `json:"type"`
-		Text    string `json:"text"`
-		User    string `json:"user"`
-		Channel string `json:"channel"`
-		TS      string `json:"ts"`
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		User     string `json:"user"`
+		Channel  string `json:"channel"`
+		TS       string `json:"ts"`
 		ThreadTS string `json:"thread_ts"`
 	} `json:"event"`
 }

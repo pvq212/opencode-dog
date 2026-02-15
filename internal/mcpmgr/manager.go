@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/db"
+	"github.com/opencode-ai/opencode-dog/internal/db"
 )
 
 type Manager struct {
@@ -28,7 +28,8 @@ func (m *Manager) Install(ctx context.Context, id string) error {
 
 	_ = m.database.UpdateMCPServerStatus(ctx, id, db.MCPStatusInstalling, nil)
 
-	installCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	timeout := m.database.GetSettingDuration(ctx, "mcp_install_timeout", 3*time.Minute)
+	installCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	var cmd *exec.Cmd
@@ -70,7 +71,8 @@ func (m *Manager) Uninstall(ctx context.Context, id string) error {
 	_ = m.database.UpdateMCPServerStatus(ctx, id, db.MCPStatusUninstalling, nil)
 
 	if srv.Type == "npm" {
-		uninstallCtx, cancel := context.WithTimeout(ctx, time.Minute)
+		timeout := m.database.GetSettingDuration(ctx, "mcp_uninstall_timeout", time.Minute)
+		uninstallCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 
 		cmd := exec.CommandContext(uninstallCtx, "npm", "uninstall", "-g", srv.Package)

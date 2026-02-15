@@ -9,17 +9,25 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/opencode-ai/opencode-dog/internal/db"
 )
 
 type TelegramProvider struct {
+	database   *db.DB
 	logger     *slog.Logger
 	httpClient *http.Client
+	parseMode  string
 }
 
-func NewTelegramProvider(logger *slog.Logger) *TelegramProvider {
+func NewTelegramProvider(database *db.DB, logger *slog.Logger) *TelegramProvider {
+	timeout := database.GetSettingDuration(context.Background(), "telegram_http_timeout", 30*time.Second)
+	parseMode := database.GetSettingString(context.Background(), "telegram_parse_mode", "Markdown")
 	return &TelegramProvider{
+		database:   database,
 		logger:     logger,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: &http.Client{Timeout: timeout},
+		parseMode:  parseMode,
 	}
 }
 
@@ -126,9 +134,9 @@ func (t *TelegramProvider) SendReply(ctx context.Context, cfg map[string]any, ms
 
 	payload := map[string]any{
 		"chat_id":                  meta.ChatID,
-		"reply_to_message_id":     meta.MessageID,
-		"text":                    body,
-		"parse_mode":             "Markdown",
+		"reply_to_message_id":      meta.MessageID,
+		"text":                     body,
+		"parse_mode":               t.parseMode,
 		"disable_web_page_preview": true,
 	}
 

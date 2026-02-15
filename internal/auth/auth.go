@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/db"
+	"github.com/opencode-ai/opencode-dog/internal/db"
 )
 
 var (
@@ -34,10 +34,10 @@ type TokenClaims struct {
 }
 
 type Auth struct {
-	database  *db.DB
-	logger    *slog.Logger
-	secret    []byte
-	tokenTTL  time.Duration
+	database *db.DB
+	logger   *slog.Logger
+	secret   []byte
+	tokenTTL time.Duration
 }
 
 func New(database *db.DB, logger *slog.Logger, jwtSecret string) *Auth {
@@ -75,19 +75,20 @@ func (a *Auth) Login(ctx context.Context, username, password string) (string, *d
 	if !CheckPassword(user.PasswordHash, password) {
 		return "", nil, ErrInvalidCredentials
 	}
-	token, err := a.generateToken(user)
+	token, err := a.generateToken(ctx, user)
 	if err != nil {
 		return "", nil, err
 	}
 	return token, user, nil
 }
 
-func (a *Auth) generateToken(user *db.User) (string, error) {
+func (a *Auth) generateToken(ctx context.Context, user *db.User) (string, error) {
+	ttl := a.database.GetSettingDuration(ctx, "token_ttl", a.tokenTTL)
 	claims := TokenClaims{
 		UserID:   user.ID,
 		Username: user.Username,
 		Role:     user.Role,
-		Exp:      time.Now().Add(a.tokenTTL).Unix(),
+		Exp:      time.Now().Add(ttl).Unix(),
 	}
 	payload, err := json.Marshal(claims)
 	if err != nil {

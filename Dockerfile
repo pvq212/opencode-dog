@@ -1,3 +1,12 @@
+# Stage 1: Frontend builder
+FROM node:22-bookworm-slim AS frontend
+WORKDIR /app/web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ .
+RUN npm run build
+
+# Stage 2: Go builder
 FROM golang:1.24-bookworm AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
@@ -8,9 +17,11 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+COPY --from=frontend /app/internal/webui/dist/ ./internal/webui/dist/
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/opencode-gitlab-bot ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/opencode-dog ./cmd/server
 
+# Stage 3: Runtime
 FROM node:22-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -23,7 +34,7 @@ RUN go install github.com/opencode-ai/opencode@latest 2>/dev/null || true
 
 WORKDIR /app
 
-COPY --from=builder /bin/opencode-gitlab-bot /app/opencode-gitlab-bot
+COPY --from=builder /bin/opencode-dog /app/opencode-dog
 COPY migrations/ /app/migrations/
 
 RUN mkdir -p /app/config /home/appuser/.ssh && \
@@ -39,4 +50,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget -qO- http://localhost:8080/health || exit 1
 
-ENTRYPOINT ["/app/opencode-gitlab-bot"]
+ENTRYPOINT ["/app/opencode-dog"]

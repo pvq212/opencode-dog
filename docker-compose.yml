@@ -4,11 +4,11 @@ services:
     environment:
       POSTGRES_USER: opencode
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: opencode_gitlab
+      POSTGRES_DB: opencode_dog
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U opencode -d opencode_gitlab"]
+      test: ["CMD-SHELL", "pg_isready -U opencode -d opencode_dog"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -24,7 +24,7 @@ services:
       - DB_PORT=5432
       - DB_USER=opencode
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=opencode_gitlab
+      - DB_NAME=opencode_dog
       - DB_SSLMODE=disable
       - JWT_SECRET=${JWT_SECRET:-}
       - OPENCODE_CONFIG_DIR=/app/config

@@ -1,4 +1,4 @@
-module github.com/opencode-ai/opencode-gitlab-bot
+module github.com/opencode-ai/opencode-dog
 
 go 1.24.0
 

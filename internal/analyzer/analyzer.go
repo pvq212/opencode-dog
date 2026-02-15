@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/db"
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/provider"
+	"github.com/opencode-ai/opencode-dog/internal/db"
+	"github.com/opencode-ai/opencode-dog/internal/provider"
 )
 
 type Analyzer struct {
@@ -85,8 +85,9 @@ func (a *Analyzer) HandleMessage(ctx context.Context, msg *provider.IncomingMess
 	}
 	cfgMap := pcfg.ConfigMap()
 
-	ackBody := fmt.Sprintf("🔍 **OpenCode** received your request (%s mode).\n> Keyword: `%s` | Author: %s\n\n_Analyzing..._",
-		matchedMode, matchedKeyword, msg.Author)
+	tpl := a.database.GetSettingString(ctx, "analyzer_ack_template",
+		"🔍 **OpenCode** received your request (%s mode).\n> Keyword: `%s` | Author: %s\n\n_Analyzing..._")
+	ackBody := fmt.Sprintf(tpl, matchedMode, matchedKeyword, msg.Author)
 	if err := p.SendReply(ctx, cfgMap, msg, ackBody); err != nil {
 		a.logger.Error("send ack failed", "error", err)
 	}
@@ -98,14 +99,18 @@ func (a *Analyzer) HandleMessage(ctx context.Context, msg *provider.IncomingMess
 		a.logger.Error("analysis failed", "task_id", task.ID, "error", err)
 		errMsg := err.Error()
 		_ = a.database.UpdateTaskStatus(ctx, task.ID, db.TaskStatusFailed, nil, &errMsg)
-		errReply := fmt.Sprintf("⚠️ **OpenCode** error:\n```\n%s\n```", err.Error())
+		tpl := a.database.GetSettingString(ctx, "analyzer_error_template",
+			"⚠️ **OpenCode** error:\n```\n%s\n```")
+		errReply := fmt.Sprintf(tpl, err.Error())
 		_ = p.SendReply(ctx, cfgMap, msg, errReply)
 		return
 	}
 
 	_ = a.database.UpdateTaskStatus(ctx, task.ID, db.TaskStatusCompleted, &result, nil)
 
-	replyBody := fmt.Sprintf("## 🤖 OpenCode Analysis\n\n%s\n\n---\n_%s mode | triggered by %s_", result, matchedMode, msg.Author)
+	resultTpl := a.database.GetSettingString(ctx, "analyzer_result_template",
+		"## 🤖 OpenCode Analysis\n\n%s\n\n---\n_%s mode | triggered by %s_")
+	replyBody := fmt.Sprintf(resultTpl, result, matchedMode, msg.Author)
 	if err := p.SendReply(ctx, cfgMap, msg, replyBody); err != nil {
 		a.logger.Error("send result failed", "error", err)
 	}
@@ -122,7 +127,7 @@ func matchKeyword(text string, keywords []*db.TriggerKeyword) (string, provider.
 }
 
 func (a *Analyzer) analyze(ctx context.Context, msg *provider.IncomingMessage, mode provider.TriggerMode) (string, error) {
-	prompt := buildPrompt(msg, mode)
+	prompt := a.buildPrompt(ctx, msg, mode)
 	return a.runOpencode(ctx, prompt)
 }
 
@@ -133,7 +138,8 @@ func (a *Analyzer) runOpencode(ctx context.Context, prompt string) (string, erro
 
 	binary := a.database.GetSettingString(ctx, "opencode_binary", "opencode")
 
-	runCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	timeout := a.database.GetSettingDuration(ctx, "analyzer_timeout", 5*time.Minute)
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, binary, "-p", prompt, "-f", "json", "-q")
@@ -268,18 +274,22 @@ func (a *Analyzer) buildEnv(ctx context.Context) []string {
 	return env
 }
 
-func buildPrompt(msg *provider.IncomingMessage, mode provider.TriggerMode) string {
+func (a *Analyzer) buildPrompt(ctx context.Context, msg *provider.IncomingMessage, mode provider.TriggerMode) string {
 	var sb strings.Builder
 
 	switch mode {
 	case provider.ModeAsk:
-		sb.WriteString("You are an expert software engineer. Answer the following question with a detailed, actionable response.\n\n")
+		sb.WriteString(a.database.GetSettingString(ctx, "prompt_ask",
+			"You are an expert software engineer. Answer the following question with a detailed, actionable response.\n\n"))
 	case provider.ModePlan:
-		sb.WriteString("You are an expert software architect. Create a detailed implementation plan for the following request.\n\n")
+		sb.WriteString(a.database.GetSettingString(ctx, "prompt_plan",
+			"You are an expert software architect. Create a detailed implementation plan for the following request.\n\n"))
 	case provider.ModeDo:
-		sb.WriteString("You are an expert software engineer. Provide the exact code changes needed to resolve the following issue.\n\n")
+		sb.WriteString(a.database.GetSettingString(ctx, "prompt_do",
+			"You are an expert software engineer. Provide the exact code changes needed to resolve the following issue.\n\n"))
 	default:
-		sb.WriteString("You are an expert software engineer. Analyze the following and provide a detailed response.\n\n")
+		sb.WriteString(a.database.GetSettingString(ctx, "prompt_default",
+			"You are an expert software engineer. Analyze the following and provide a detailed response.\n\n"))
 	}
 
 	sb.WriteString(fmt.Sprintf("## Source: %s\n", msg.Provider))
@@ -290,7 +300,7 @@ func buildPrompt(msg *provider.IncomingMessage, mode provider.TriggerMode) strin
 		sb.WriteString(fmt.Sprintf("Reference: %s\n\n", msg.ExternalRef))
 	}
 
-	sb.WriteString("Format your response in Markdown.")
+	sb.WriteString(a.database.GetSettingString(ctx, "prompt_format_suffix", "Format your response in Markdown."))
 	return sb.String()
 }
 

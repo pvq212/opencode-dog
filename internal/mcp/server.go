@@ -10,7 +10,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/db"
+	"github.com/opencode-ai/opencode-dog/internal/db"
 )
 
 type Server struct {
@@ -135,19 +135,13 @@ func (s *Server) handleGetTask(ctx context.Context, request mcp.CallToolRequest)
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	tasks, err := s.database.ListTasks(ctx, 100, 0)
+	task, err := s.database.GetTask(ctx, taskID)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to query tasks: %v", err)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("task not found: %v", err)), nil
 	}
 
-	for _, t := range tasks {
-		if t.ID == taskID {
-			data, _ := json.MarshalIndent(t, "", "  ")
-			return mcp.NewToolResultText(string(data)), nil
-		}
-	}
-
-	return mcp.NewToolResultError("task not found"), nil
+	data, _ := json.MarshalIndent(task, "", "  ")
+	return mcp.NewToolResultText(string(data)), nil
 }
 
 func (s *Server) handleListProviders(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

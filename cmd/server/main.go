@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/config"
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/server"
+	"github.com/opencode-ai/opencode-dog/internal/config"
+	"github.com/opencode-ai/opencode-dog/internal/server"
 )
 
 func main() {

@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/auth"
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/db"
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/mcpmgr"
+	"github.com/opencode-ai/opencode-dog/internal/auth"
+	"github.com/opencode-ai/opencode-dog/internal/db"
+	"github.com/opencode-ai/opencode-dog/internal/mcpmgr"
 )
 
 type API struct {
@@ -159,7 +159,7 @@ func (a *API) handleProjects(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if p.DefaultBranch == "" {
-			p.DefaultBranch = "main"
+			p.DefaultBranch = a.database.GetSettingString(r.Context(), "default_git_branch", "main")
 		}
 		p.Enabled = true
 		if err := a.database.CreateProject(r.Context(), &p); err != nil {
@@ -375,8 +375,10 @@ func (a *API) handleTasks(w http.ResponseWriter, r *http.Request) {
 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if limit <= 0 || limit > 100 {
-		limit = 50
+	defaultLimit := a.database.GetSettingInt(r.Context(), "task_list_default_limit", 50)
+	maxLimit := a.database.GetSettingInt(r.Context(), "task_list_max_limit", 100)
+	if limit <= 0 || limit > maxLimit {
+		limit = defaultLimit
 	}
 
 	tasks, err := a.database.ListTasks(r.Context(), limit, offset)

@@ -100,6 +100,27 @@ INSERT INTO settings (key, value) VALUES
     ('opencode_ohmy_json', '{}'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 
+INSERT INTO settings (key, value) VALUES
+    ('analyzer_timeout', '"5m"'),
+    ('analyzer_ack_template', '"🔍 **OpenCode** received your request (%s mode).\n> Keyword: `%s` | Author: %s\n\n_Analyzing..._"'),
+    ('analyzer_error_template', '"⚠️ **OpenCode** error:\n```\n%s\n```"'),
+    ('analyzer_result_template', '"## 🤖 OpenCode Analysis\n\n%s\n\n---\n_%s mode | triggered by %s_"'),
+    ('prompt_ask', '"You are an expert software engineer. Answer the following question with a detailed, actionable response.\n\n"'),
+    ('prompt_plan', '"You are an expert software architect. Create a detailed implementation plan for the following request.\n\n"'),
+    ('prompt_do', '"You are an expert software engineer. Provide the exact code changes needed to resolve the following issue.\n\n"'),
+    ('prompt_default', '"You are an expert software engineer. Analyze the following and provide a detailed response.\n\n"'),
+    ('prompt_format_suffix', '"Format your response in Markdown."'),
+    ('token_ttl', '"24h"'),
+    ('mcp_install_timeout', '"3m"'),
+    ('mcp_uninstall_timeout', '"1m"'),
+    ('slack_http_timeout', '"30s"'),
+    ('telegram_http_timeout', '"30s"'),
+    ('telegram_parse_mode', '"Markdown"'),
+    ('task_list_default_limit', '50'),
+    ('task_list_max_limit', '100'),
+    ('default_git_branch', '"main"')
+ON CONFLICT (key) DO NOTHING;
+
 DO $$ BEGIN
     CREATE TYPE mcp_server_status AS ENUM ('pending','installing','installed','failed','uninstalling');
 EXCEPTION WHEN duplicate_object THEN NULL;

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 )
 
 // Config holds infrastructure-only settings loaded from environment variables.
@@ -26,6 +27,15 @@ type Config struct {
 	OpencodeConfigDir string
 
 	JWTSecret string
+
+	ReadHeaderTimeout time.Duration
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
+	IdleTimeout       time.Duration
+	ShutdownTimeout   time.Duration
+	DBMaxConns        int32
+	DBMinConns        int32
+	DBMaxConnLifetime time.Duration
 }
 
 func Load() (*Config, error) {
@@ -36,10 +46,18 @@ func Load() (*Config, error) {
 		DBPort:            getEnvInt("DB_PORT", 5432),
 		DBUser:            getEnv("DB_USER", "opencode"),
 		DBPassword:        getEnv("DB_PASSWORD", ""),
-		DBName:            getEnv("DB_NAME", "opencode_gitlab"),
+		DBName:            getEnv("DB_NAME", "opencode_dog"),
 		DBSSLMode:         getEnv("DB_SSLMODE", "disable"),
 		OpencodeConfigDir: getEnv("OPENCODE_CONFIG_DIR", "/app/config"),
 		JWTSecret:         getEnv("JWT_SECRET", ""),
+		ReadHeaderTimeout: getEnvDuration("SERVER_READ_HEADER_TIMEOUT", 10*time.Second),
+		ReadTimeout:       getEnvDuration("SERVER_READ_TIMEOUT", 30*time.Second),
+		WriteTimeout:      getEnvDuration("SERVER_WRITE_TIMEOUT", 60*time.Second),
+		IdleTimeout:       getEnvDuration("SERVER_IDLE_TIMEOUT", 120*time.Second),
+		ShutdownTimeout:   getEnvDuration("SERVER_SHUTDOWN_TIMEOUT", 30*time.Second),
+		DBMaxConns:        int32(getEnvInt("DB_MAX_CONNS", 20)),
+		DBMinConns:        int32(getEnvInt("DB_MIN_CONNS", 2)),
+		DBMaxConnLifetime: getEnvDuration("DB_MAX_CONN_LIFETIME", 30*time.Minute),
 	}
 	if cfg.DBPassword == "" {
 		return nil, fmt.Errorf("DB_PASSWORD is required")
@@ -73,4 +91,16 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return i
+}
+
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return fallback
+	}
+	return d
 }

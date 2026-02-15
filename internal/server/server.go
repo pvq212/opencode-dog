@@ -4,22 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/opencode-ai/opencode-dog/internal/analyzer"
+	"github.com/opencode-ai/opencode-dog/internal/api"
+	"github.com/opencode-ai/opencode-dog/internal/auth"
+	"github.com/opencode-ai/opencode-dog/internal/config"
+	"github.com/opencode-ai/opencode-dog/internal/db"
+	mcpserver "github.com/opencode-ai/opencode-dog/internal/mcp"
+	"github.com/opencode-ai/opencode-dog/internal/mcpmgr"
+	"github.com/opencode-ai/opencode-dog/internal/provider"
+	"github.com/opencode-ai/opencode-dog/internal/webui"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
-
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/analyzer"
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/api"
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/auth"
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/config"
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/db"
-	mcpserver "github.com/opencode-ai/opencode-gitlab-bot/internal/mcp"
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/mcpmgr"
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/provider"
-	"github.com/opencode-ai/opencode-gitlab-bot/internal/webui"
 )
 
 type Server struct {
@@ -36,15 +34,15 @@ type Server struct {
 func New(cfg *config.Config, logger *slog.Logger) (*Server, error) {
 	ctx := context.Background()
 
-	database, err := db.New(ctx, cfg.DSN())
+	database, err := db.New(ctx, cfg.DSN(), cfg.DBMaxConns, cfg.DBMinConns, cfg.DBMaxConnLifetime)
 	if err != nil {
 		return nil, fmt.Errorf("init database: %w", err)
 	}
 
 	registry := provider.NewRegistry(logger)
 	registry.Register(provider.NewGitLabProvider(logger))
-	registry.Register(provider.NewSlackProvider(logger))
-	registry.Register(provider.NewTelegramProvider(logger))
+	registry.Register(provider.NewSlackProvider(database, logger))
+	registry.Register(provider.NewTelegramProvider(database, logger))
 
 	a := analyzer.New(database, registry, logger, cfg.OpencodeConfigDir)
 	authSvc := auth.New(database, logger, cfg.JWTSecret)
@@ -91,10 +89,10 @@ func (s *Server) Start() error {
 	s.httpServer = &http.Server{
 		Addr:              s.cfg.ListenAddr(),
 		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		ReadHeaderTimeout: s.cfg.ReadHeaderTimeout,
+		ReadTimeout:       s.cfg.ReadTimeout,
+		WriteTimeout:      s.cfg.WriteTimeout,
+		IdleTimeout:       s.cfg.IdleTimeout,
 	}
 
 	errCh := make(chan error, 1)
@@ -175,7 +173,7 @@ func (s *Server) registerWebhookRoutes(mux *http.ServeMux) {
 }
 
 func (s *Server) shutdown() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout)
 	defer cancel()
 	s.logger.Info("shutting down server...")
 	if err := s.httpServer.Shutdown(ctx); err != nil {

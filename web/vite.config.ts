@@ -8,4 +8,12 @@ export default defineConfig({
     outDir: '../internal/webui/dist',
     emptyOutDir: true,
   },
+  server: {
+    proxy: {
+      '/api': 'http://localhost:8080',
+      '/hook': 'http://localhost:8080',
+      '/mcp': 'http://localhost:8080',
+      '/health': 'http://localhost:8080',
+    },
+  },
 })

@@ -15,14 +15,14 @@ type DB struct {
 	Pool *pgxpool.Pool
 }
 
-func New(ctx context.Context, dsn string) (*DB, error) {
+func New(ctx context.Context, dsn string, maxConns int32, minConns int32, maxLifetime time.Duration) (*DB, error) {
 	config, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("parse dsn: %w", err)
 	}
-	config.MaxConns = 20
-	config.MinConns = 2
-	config.MaxConnLifetime = 30 * time.Minute
+	config.MaxConns = maxConns
+	config.MinConns = minConns
+	config.MaxConnLifetime = maxLifetime
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
@@ -356,6 +356,34 @@ func (d *DB) GetSettingString(ctx context.Context, key string, fallback string) 
 		return fallback
 	}
 	return v
+}
+
+func (d *DB) GetSettingInt(ctx context.Context, key string, fallback int) int {
+	s, err := d.GetSetting(ctx, key)
+	if err != nil {
+		return fallback
+	}
+	var v int
+	if err := json.Unmarshal(s.Value, &v); err != nil {
+		return fallback
+	}
+	return v
+}
+
+func (d *DB) GetSettingDuration(ctx context.Context, key string, fallback time.Duration) time.Duration {
+	s, err := d.GetSetting(ctx, key)
+	if err != nil {
+		return fallback
+	}
+	var v string
+	if err := json.Unmarshal(s.Value, &v); err != nil {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(v)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 func (d *DB) SetSetting(ctx context.Context, key string, value json.RawMessage) error {

@@ -1,0 +1,27 @@
+# Environment variables (secrets)
+.env
+.env.*
+!.env.example
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+tmp/
+
+# Frontend build output (embedded via go:embed)
+internal/webui/dist/
+
+# Node
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.sw?
+.DS_Store
