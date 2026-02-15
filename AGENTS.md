@@ -7,9 +7,9 @@
 ## 架構流程
 
 ```
-Webhook 請求 → Provider 層（驗證 + 解析）→ Analyzer（子程序呼叫 OpenCode CLI）→ 結果回寫渠道
-                                                                ↕
-                                                        PostgreSQL（所有設定 + 任務紀錄）
+Webhook 請求 → Provider 層（驗證 + 解析）→ Analyzer（HTTP 呼叫 OpenCode Server）→ 結果回寫渠道
+                                                                ↕               ↕
+                                                        PostgreSQL（所有設定） OpenCode Server (Docker)
                                                                 ↑
                                                      React Admin WebUI（嵌入 Go binary）
 ```
@@ -43,7 +43,8 @@ opencode-dog/
 | 新增渠道（如 Discord） | `internal/provider/` | 實作 `Provider` 介面，在 `server.go` 註冊 |
 | 修改 API 端點 | `internal/api/api.go` | `RegisterRoutes()` 集中註冊，handler 同檔 |
 | 修改資料庫 | `internal/db/db.go` + `models.go` | 手寫 SQL，無 ORM |
-| 修改觸發邏輯 | `internal/analyzer/analyzer.go` | `matchKeyword()` + `buildPrompt()` |
+| 修改觸發邏輯 | `internal/analyzer/analyzer.go` | `matchKeyword()` + 呼叫 HTTP 客戶端 |
+| OpenCode HTTP 客戶端 | `internal/analyzer/opencode_client.go` | Session 管理 + 同步訊息發送 |
 | 新增 MCP Tool | `internal/mcp/server.go` | `registerTools()` 方法 |
 | 前端頁面 | `web/src/resources/` | 每個 `.tsx` 對應一個 React Admin Resource |
 | 認證邏輯 | `internal/auth/auth.go` | 自製 HMAC Token（非標準 JWT lib） |
@@ -59,6 +60,7 @@ opencode-dog/
 | 資料庫 | PostgreSQL 16 |
 | 認證 | HMAC Token（自製）、bcrypt 密碼雜湊 |
 | 外部 SDK | go-gitlab v0.115、mcp-go v0.44 |
+| AI 引擎 | OpenCode Server (Docker 容器，HTTP API) |
 | 容器 | Docker 多階段建置（Go builder → Node.js 22 runtime） |
 
 ## 慣例
@@ -108,7 +110,9 @@ cd web && npm run lint
 
 ## 注意事項
 
-- `analyzer.go` 呼叫 OpenCode CLI 有 5 分鐘超時限制
+- `analyzer.go` 透過 HTTP API 呼叫 OpenCode Server，5 分鐘超時限制
+- OpenCode Server 運行於獨立的 Docker 容器（Port 4096）
+- 設定檔（auth.json 等）會同步至共享 Volume，修改後需重啟 OpenCode Server 才會生效
 - MCP 套件安裝有 3 分鐘超時限制
 - Webhook 路由在啟動時從 DB 載入並註冊；新增 Provider 設定後需重啟才生效（或走 fallback `/hook/` 路由）
 - `internal/mcp/server.go` 的 `handleGetTask` 用迴圈掃全表查找，非直接 ID 查詢

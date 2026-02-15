@@ -1,13 +1,11 @@
 package analyzer
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -17,18 +15,28 @@ import (
 )
 
 type Analyzer struct {
-	database  *db.DB
-	registry  *provider.Registry
-	logger    *slog.Logger
-	configDir string
+	database       *db.DB
+	registry       *provider.Registry
+	logger         *slog.Logger
+	configDir      string
+	opencodeClient *OpencodeClient
 }
 
 func New(database *db.DB, registry *provider.Registry, logger *slog.Logger, configDir string) *Analyzer {
+	ctx := context.Background()
+	serverURL := database.GetSettingString(ctx, "opencode_server_url", "http://opencode-server:4096")
+	authUser := database.GetSettingString(ctx, "opencode_server_auth_user", "opencode")
+	authPass := database.GetSettingString(ctx, "opencode_server_auth_password", "")
+	timeout := database.GetSettingDuration(ctx, "analyzer_timeout", 5*time.Minute)
+
+	client := NewOpencodeClient(serverURL, authUser, authPass, timeout, logger)
+
 	return &Analyzer{
-		database:  database,
-		registry:  registry,
-		logger:    logger,
-		configDir: configDir,
+		database:       database,
+		registry:       registry,
+		logger:         logger,
+		configDir:      configDir,
+		opencodeClient: client,
 	}
 }
 
@@ -126,45 +134,44 @@ func matchKeyword(text string, keywords []*db.TriggerKeyword) (string, provider.
 	return "", ""
 }
 
-func (a *Analyzer) analyze(ctx context.Context, msg *provider.IncomingMessage, mode provider.TriggerMode) (string, error) {
-	prompt := a.buildPrompt(ctx, msg, mode)
-	return a.runOpencode(ctx, prompt)
+func (a *Analyzer) SyncConfig(ctx context.Context) {
+	if err := a.writeConfigFiles(ctx); err != nil {
+		a.logger.Warn("failed to sync opencode config files", "error", err)
+		return
+	}
+	a.logger.Info("opencode config files synced to disk", "dir", a.configDir)
 }
 
-func (a *Analyzer) runOpencode(ctx context.Context, prompt string) (string, error) {
+func (a *Analyzer) analyze(ctx context.Context, msg *provider.IncomingMessage, mode provider.TriggerMode) (string, error) {
 	if err := a.writeConfigFiles(ctx); err != nil {
 		return "", fmt.Errorf("write config: %w", err)
 	}
 
-	binary := a.database.GetSettingString(ctx, "opencode_binary", "opencode")
+	prompt := a.buildPrompt(ctx, msg, mode)
+	return a.runOpencodeHTTP(ctx, prompt)
+}
 
-	timeout := a.database.GetSettingDuration(ctx, "analyzer_timeout", 5*time.Minute)
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+func (a *Analyzer) runOpencodeHTTP(ctx context.Context, prompt string) (string, error) {
+	title := fmt.Sprintf("Analysis %s", time.Now().Format("2006-01-02 15:04:05"))
+	session, err := a.opencodeClient.CreateSession(ctx, title)
+	if err != nil {
+		return "", fmt.Errorf("create session: %w", err)
+	}
 
-	cmd := exec.CommandContext(runCtx, binary, "-p", prompt, "-f", "json", "-q")
-	cmd.Dir = a.configDir
-	cmd.Env = a.buildEnv(ctx)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	a.logger.Info("running opencode", "binary", binary, "config_dir", a.configDir)
-
-	if err := cmd.Run(); err != nil {
-		stderrStr := stderr.String()
-		if stderrStr != "" {
-			return "", fmt.Errorf("opencode failed: %w\nstderr: %s", err, stderrStr)
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if delErr := a.opencodeClient.DeleteSession(cleanupCtx, session.ID); delErr != nil {
+			a.logger.Warn("failed to delete session", "session_id", session.ID, "error", delErr)
 		}
-		return "", fmt.Errorf("opencode failed: %w", err)
+	}()
+
+	result, err := a.opencodeClient.SendMessage(ctx, session.ID, prompt)
+	if err != nil {
+		return "", fmt.Errorf("send message: %w", err)
 	}
 
-	output := strings.TrimSpace(stdout.String())
-	if output == "" {
-		return "", fmt.Errorf("opencode returned empty output")
-	}
-	return output, nil
+	return result, nil
 }
 
 func (a *Analyzer) writeConfigFiles(ctx context.Context) error {
@@ -236,42 +243,6 @@ func (a *Analyzer) injectMCPServers(ctx context.Context) error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 	return os.WriteFile(configPath, merged, 0o600)
-}
-
-func (a *Analyzer) buildEnv(ctx context.Context) []string {
-	env := os.Environ()
-	env = append(env, "HOME="+a.configDir)
-
-	authPath := filepath.Join(a.configDir, "auth.json")
-	data, err := os.ReadFile(authPath)
-	if err != nil {
-		return env
-	}
-
-	var authConfig map[string]any
-	if err := json.Unmarshal(data, &authConfig); err != nil {
-		return env
-	}
-
-	envKeys := map[string]string{
-		"anthropic_api_key":  "ANTHROPIC_API_KEY",
-		"openai_api_key":     "OPENAI_API_KEY",
-		"gemini_api_key":     "GEMINI_API_KEY",
-		"groq_api_key":       "GROQ_API_KEY",
-		"openrouter_api_key": "OPENROUTER_API_KEY",
-		"xai_api_key":        "XAI_API_KEY",
-		"github_token":       "GITHUB_TOKEN",
-	}
-
-	for jsonKey, envKey := range envKeys {
-		if val, ok := authConfig[jsonKey]; ok {
-			if s, ok := val.(string); ok && s != "" {
-				env = append(env, envKey+"="+s)
-			}
-		}
-	}
-
-	return env
 }
 
 func (a *Analyzer) buildPrompt(ctx context.Context, msg *provider.IncomingMessage, mode provider.TriggerMode) string {

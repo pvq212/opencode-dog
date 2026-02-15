@@ -34,10 +34,10 @@
 PM 在 GitLab Issue 留言 `@opencode 幫我分析這個 bug`，幾分鐘後就能收到完整的分析報告。QA 在 Slack 頻道貼上錯誤訊息，AI 直接給出修復方案。不需要切換工具、不需要學新介面——**在你原本的工作流裡，直接獲得 AI 能力。**
 
 ```
-💬 團隊對話窗                    🐕 OpenCode Dog                    🤖 OpenCode CLI
+💬 團隊對話窗                    🐕 OpenCode Dog                    🤖 OpenCode Server
 ───────────────────────────────────────────────────────────────────────────────
   PM: "@opencode 為什麼登入     →  解析訊息 → 觸發分析  →  AI 深度分析
-       頁面一直轉圈？"                                         程式碼庫
+       頁面一直轉圈？"              (HTTP API)                   程式碼庫
                                                                   │
   PM 收到完整分析報告  ←────────  格式化結果 ← 回傳分析   ←──────┘
   直接在 Issue 裡回覆
@@ -85,7 +85,7 @@ cd opencode-dog
 
 # 2. 設定環境變數
 cp .env.example .env
-# 編輯 .env，設定 DB_PASSWORD 和 JWT_SECRET
+# 編輯 .env，設定 DB_PASSWORD、JWT_SECRET 和 OPENCODE_SERVER_PASSWORD
 
 # 3. 啟動
 docker compose up -d
@@ -184,9 +184,13 @@ cd web && npm run dev   # 需後端同時執行
               └────────┬─────────┘
                        ▼
               ┌──────────────────┐
-              │    Analyzer      │  呼叫 OpenCode CLI（子程序）
+              │    Analyzer      │  HTTP API 呼叫
               └────────┬─────────┘
                        ▼
+              ┌──────────────────┐
+              │  OpenCode Server │  Docker 容器（port 4096）
+              └──────────────────┘
+
               ┌──────────────────┐
               │   PostgreSQL     │  設定、任務、使用者
               └──────────────────┘
@@ -211,7 +215,7 @@ opencode-dog/
 │   │   ├── gitlab.go               #   GitLab 實作
 │   │   ├── slack.go                #   Slack 實作
 │   │   └── telegram.go             #   Telegram 實作
-│   ├── analyzer/                   # OpenCode CLI 子程序管理
+│   ├── analyzer/                   # OpenCode Server HTTP 客戶端
 │   ├── api/                        # REST API 端點
 │   ├── mcp/                        # MCP Protocol 伺服器
 │   ├── mcpmgr/                     # MCP npm 套件管理
@@ -230,9 +234,10 @@ opencode-dog/
 | 後端 | Go 1.24 · 標準庫 `net/http` · pgx v5 |
 | 前端 | React 19 · React Admin 5.14 · Vite 7 · MUI 7 · Monaco Editor |
 | 資料庫 | PostgreSQL 16 |
+| AI 引擎 | [OpenCode](https://opencode.ai) Server（Docker 容器，HTTP API） |
 | 認證 | HMAC Token · bcrypt |
 | SDK | [go-gitlab](https://github.com/xanzy/go-gitlab) v0.115 · [mcp-go](https://github.com/mark3labs/mcp-go) v0.44 |
-| 部署 | Docker 多階段建置（Go builder → Node.js 22 runtime） |
+| 部署 | Docker Compose（PostgreSQL + OpenCode Server + App） |
 
 ---
 
@@ -282,7 +287,10 @@ opencode-dog/
 | `DB_NAME` | 資料庫名稱 | `opencode_dog` |
 | `DB_SSLMODE` | SSL 模式 | `disable` |
 | `JWT_SECRET` | Token 簽名密鑰 | **建議設定**¹ |
-| `OPENCODE_CONFIG_DIR` | OpenCode 設定檔目錄 | `/app/config` |
+| `OPENCODE_CONFIG_DIR` | OpenCode 設定檔目錄 | `/app/opencode-config` |
+| `OPENCODE_SERVER_USERNAME` | OpenCode Server 認證用戶名 | `opencode` |
+| `OPENCODE_SERVER_PASSWORD` | OpenCode Server 認證密碼 | **必填** |
+| `OPENCODE_SERVER_PORT` | OpenCode Server 對外埠號 | `4096` |
 
 > ¹ 未設定時自動生成隨機密鑰，重啟後所有 Token 失效。
 

@@ -187,3 +187,7 @@ func (s *Server) shutdown() error {
 func (s *Server) RunMigrations(ctx context.Context, dir string) error {
 	return s.database.RunMigrations(ctx, dir)
 }
+
+func (s *Server) SyncOpencodeConfig(ctx context.Context) {
+	s.analyzer.SyncConfig(ctx)
+}

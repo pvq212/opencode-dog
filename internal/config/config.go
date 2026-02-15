@@ -21,9 +21,9 @@ type Config struct {
 	DBName     string
 	DBSSLMode  string
 
-	// OpencodeConfigDir is the directory where opencode config files are stored.
-	// auth.json, opencode.json, oh-my-opencode.json are generated/managed here.
-	// Mounted as a Docker volume so configs persist across restarts.
+	// OpencodeConfigDir stores opencode config files (auth.json, .opencode.json,
+	// oh-my-opencode.json) synced from DB. Bind-mounted to the OpenCode server
+	// container so both services share the same configuration.
 	OpencodeConfigDir string
 
 	JWTSecret string

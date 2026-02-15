@@ -25,12 +25,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/opencode-dog ./cm
 FROM node:22-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates tzdata git openssh-client golang && \
+    ca-certificates tzdata git openssh-client curl && \
     rm -rf /var/lib/apt/lists/* && \
     addgroup --system appgroup && \
     adduser --system --ingroup appgroup appuser
-
-RUN go install github.com/opencode-ai/opencode@latest 2>/dev/null || true
 
 WORKDIR /app
 
