@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: opencode
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: opencode_gitlab
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opencode -d opencode_gitlab"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_PORT=8080
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=opencode
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=opencode_gitlab
+      - DB_SSLMODE=disable
+      - JWT_SECRET=${JWT_SECRET:-}
+      - OPENCODE_CONFIG_DIR=/app/config
+    volumes:
+      - ./data/app:/app/config
+      - ./data/npm:/home/appuser/.npm-global
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
