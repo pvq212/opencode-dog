@@ -25,12 +25,6 @@ interface Keyword {
   mode: string;
 }
 
-const modeColors: Record<string, 'error' | 'warning' | 'info'> = {
-  do: 'error',
-  plan: 'warning',
-  ask: 'info',
-};
-
 export const KeywordEditor = ({ projectId }: { projectId: string }) => {
   const dataProvider = useDataProvider();
   const notify = useNotify();

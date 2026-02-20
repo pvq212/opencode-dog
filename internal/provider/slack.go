@@ -11,19 +11,18 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/opencode-ai/opencode-dog/internal/db"
 )
 
 type SlackProvider struct {
-	database   *db.DB
+	database   db.Store
 	logger     *slog.Logger
 	httpClient *http.Client
 }
 
-func NewSlackProvider(database *db.DB, logger *slog.Logger) *SlackProvider {
+func NewSlackProvider(database db.Store, logger *slog.Logger) *SlackProvider {
 	timeout := database.GetSettingDuration(context.Background(), "slack_http_timeout", 30*time.Second)
 	return &SlackProvider{
 		database:   database,
@@ -193,8 +192,4 @@ func (s *SlackProvider) SendReply(ctx context.Context, cfg map[string]any, msg *
 		return fmt.Errorf("slack api error: %s", result.Error)
 	}
 	return nil
-}
-
-func init() {
-	_ = strings.NewReader
 }

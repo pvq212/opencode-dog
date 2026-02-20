@@ -1,3 +1,8 @@
+// Package analyzer orchestrates AI code analysis via the OpenCode Server HTTP API.
+//
+// When a webhook triggers analysis, the Analyzer matches trigger keywords,
+// creates a task record, calls the OpenCode Server to perform analysis,
+// and routes the result back to the originating channel via the provider's SendReply.
 package analyzer
 
 import (
@@ -15,14 +20,14 @@ import (
 )
 
 type Analyzer struct {
-	database       *db.DB
+	database       db.Store
 	registry       *provider.Registry
 	logger         *slog.Logger
 	configDir      string
 	opencodeClient *OpencodeClient
 }
 
-func New(database *db.DB, registry *provider.Registry, logger *slog.Logger, configDir string) *Analyzer {
+func New(database db.Store, registry *provider.Registry, logger *slog.Logger, configDir string) *Analyzer {
 	ctx := context.Background()
 	serverURL := database.GetSettingString(ctx, "opencode_server_url", "http://opencode-server:4096")
 	authUser := database.GetSettingString(ctx, "opencode_server_auth_user", "opencode")

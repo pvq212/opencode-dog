@@ -1,50 +1,57 @@
-# REST API 層
+# REST API Layer
 
-## 概覽
+## Overview
 
-721 行單檔。所有 REST 端點的路由註冊與 handler 實作，含認證中介層整合。
+Per-resource handler files with shared `api.go` (struct, constructor, route registration, helpers). 73.3% test coverage via `api_test.go`.
 
-## 路由結構
+## Files
+
+| File | LOC | Handlers |
+|------|-----|----------|
+| `api.go` | 73 | `New()`, `RegisterRoutes()`, `requireRole()`, `writeJSON()`, `writeErr()` |
+| `auth_handler.go` | 91 | `handleLogin`, `handleMe`, `handleChangePassword` |
+| `project_handler.go` | 97 | `handleProjects`, `handleProjectDetail` |
+| `ssh_key_handler.go` | 66 | `handleSSHKeys`, `handleSSHKeyDetail` |
+| `provider_handler.go` | 64 | `handleProviders` |
+| `keyword_handler.go` | 44 | `handleKeywords` |
+| `task_handler.go` | 54 | `handleTasks`, `handleTaskDetail` |
+| `setting_handler.go` | 76 | `handleSettings`, `handleSettingDetail` |
+| `mcp_server_handler.go` | 121 | `handleMCPServers`, `handleMCPServerDetail` |
+| `user_handler.go` | 116 | `handleUsers`, `handleUserDetail` |
+| `api_test.go` | ~1080 | 55 tests covering all handlers, RBAC, validation |
+
+## Route Structure
 
 ```
-/api/auth/login          ← 公開（無認證）
-/api/**                  ← 全部經過 auth.Middleware（Bearer Token 驗證）
+/api/auth/login          ← Public (no auth)
+/api/**                  ← Protected via auth.Middleware (Bearer Token)
 ```
 
-`RegisterRoutes(mux)` 集中註冊，公開路由直接掛 mux，受保護路由掛在內部 `protected` mux 再透過 `auth.Middleware` 包裝。
+`RegisterRoutes(mux)` registers public routes directly on the mux; protected routes go on an internal `protected` mux wrapped with `auth.Middleware`.
 
-## Handler 命名規則
+## Handler Conventions
 
-- 集合端點：`handleProjects`、`handleTasks`（內部依 `r.Method` 分 GET/POST）
-- 明細端點：`handleProjectDetail`（內部依 `r.Method` 分 GET/PUT/DELETE）
-- 從 URL path 取 ID：手動 `strings.TrimPrefix(r.URL.Path, "/api/xxx/")`
+- Collection endpoints: `handleProjects`, `handleTasks` (dispatch by `r.Method` internally)
+- Detail endpoints: `handleProjectDetail` (dispatch by `r.Method` — GET/PUT/DELETE)
+- ID extraction: `strings.TrimPrefix(r.URL.Path, "/api/xxx/")`
+- RBAC: inline `requireRole(w, r, db.RoleAdmin)` checks within each handler
 
-## 權限控制
+## Response Format
 
-API handler 內部檢查 `auth.GetUser(ctx).Role`：
-- `admin` — 全部操作
-- `editor` — 讀取 + 部分寫入
-- `viewer` — 僅讀取
+- Success: `writeJSON(w, status, data)` — sets `Content-Type: application/json`
+- Error: `writeErr(w, status, "message")` — returns `{"error": "message"}`
 
-非 `auth.RequireRole()` 中介層模式，而是 handler 內 inline 檢查。
+## Adding a New Endpoint
 
-## 回應格式
+1. Create `{resource}_handler.go` with handler methods on `*API`
+2. Register routes in `RegisterRoutes()` on the `protected` mux
+3. Dispatch by `r.Method` (GET/POST/PUT/DELETE) within the handler
+4. RBAC: call `a.requireRole(w, r, db.RoleAdmin, ...)` for write operations
+5. Add tests to `api_test.go` using `newTestEnv()` + `doRequest()` helpers
 
-- 成功：直接 `json.NewEncoder(w).Encode(data)`
-- 錯誤：`http.Error()` 或自定 JSON `{"error": "message"}`
-- Content-Type 由各 handler 自行設定
-- React Admin 相容：部分 List 回應需含 `Content-Range` header
+## Notes
 
-## 新增端點步驟
-
-1. 在 `api.go` 新增 handler 方法
-2. 在 `RegisterRoutes()` 的 `protected` mux 註冊路由
-3. 內部做 Method 檢查（`r.Method == http.MethodGet` 等）
-4. 權限檢查用 `auth.GetUser(r.Context())`
-
-## 注意
-
-- 無路由參數解析器，路徑解析靠 `strings.TrimPrefix`
-- `/api/mcp-servers/{id}/install` 是 POST，觸發非同步安裝（`go a.mcpMgr.Install(...)`）
-- 巢狀資源（providers、keywords）路徑含 projectId：`/api/providers/{projectId}`
-- Tasks 的 List API 支援 query string 分頁（`limit`、`offset`、`status`、`provider_type`）
+- No router parameter parser — path parsing via `strings.TrimPrefix`
+- `/api/mcp-servers/{id}/install` is POST, triggers async install (`go a.mcpMgr.Install(...)`)
+- Nested resources (providers, keywords) include projectId in path: `/api/providers/{projectId}`
+- Tasks List API supports query string pagination (`limit`, `offset`)

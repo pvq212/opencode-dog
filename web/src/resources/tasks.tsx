@@ -1,7 +1,7 @@
 import {
   List, Datagrid, TextField, DateField, ShowButton,
   Show, SimpleShowLayout,
-  FunctionField, usePermissions, TextInput, SelectInput,
+  FunctionField, SelectInput,
 } from 'react-admin';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';

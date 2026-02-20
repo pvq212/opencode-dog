@@ -1,3 +1,6 @@
+// Package mcp exposes an MCP (Model Context Protocol) server that provides
+// tool access to project configuration, tasks, and settings stored in the database.
+// External AI agents can use these tools to query and manage OpenCode Dog resources.
 package mcp
 
 import (
@@ -15,11 +18,11 @@ import (
 
 type Server struct {
 	mcpServer *server.MCPServer
-	database  *db.DB
+	database  db.Store
 	logger    *slog.Logger
 }
 
-func NewServer(database *db.DB, logger *slog.Logger) *Server {
+func NewServer(database db.Store, logger *slog.Logger) *Server {
 	s := &Server{
 		database: database,
 		logger:   logger,

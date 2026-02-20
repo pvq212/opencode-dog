@@ -7,7 +7,6 @@ import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
-import Divider from '@mui/material/Divider';
 import GitLabIcon from '@mui/icons-material/Code';
 import SlackIcon from '@mui/icons-material/Tag';
 import TelegramIcon from '@mui/icons-material/Send';

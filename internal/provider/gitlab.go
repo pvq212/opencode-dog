@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	gogitlab "github.com/xanzy/go-gitlab"
 )
@@ -124,28 +123,4 @@ func (g *GitLabProvider) SendReply(ctx context.Context, cfg map[string]any, msg 
 		&gogitlab.CreateIssueNoteOptions{Body: gogitlab.Ptr(body)},
 	)
 	return err
-}
-
-func ExtractGitLabContext(cfg map[string]any, msg *IncomingMessage) (baseURL, token string, projectID, issueIID int, err error) {
-	baseURL, _ = cfg["base_url"].(string)
-	token, _ = cfg["token"].(string)
-
-	var meta gitlabReplyMeta
-	raw, _ := json.Marshal(msg.ReplyMeta)
-	if err = json.Unmarshal(raw, &meta); err != nil {
-		return
-	}
-	projectID = meta.ProjectID
-	issueIID = meta.IssueIID
-	return
-}
-
-func ContainsKeyword(text string, keywords []string) (string, TriggerMode, bool) {
-	lower := strings.ToLower(text)
-	for _, kw := range keywords {
-		if strings.Contains(lower, strings.ToLower(kw)) {
-			return kw, "", true
-		}
-	}
-	return "", "", false
 }

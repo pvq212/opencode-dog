@@ -1,3 +1,5 @@
+// Package webui serves the React Admin frontend using go:embed.
+// The compiled frontend assets in dist/ are embedded into the Go binary at build time.
 package webui
 
 import (

@@ -1,4 +1,4 @@
-import type { DataProvider } from 'react-admin';
+import type { DataProvider, DeleteResult } from 'react-admin';
 
 const API_URL = '/api';
 
@@ -251,16 +251,15 @@ const dataProvider: DataProvider = {
         { method: 'DELETE', headers: getHeaders() }
       );
       await handleResponse(response);
-      return { data: params.previousData } as any;
+    } else {
+      const endpoint = resourceToEndpoint(resource);
+      const response = await fetch(`${endpoint}/${params.id}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      await handleResponse(response);
     }
-
-    const endpoint = resourceToEndpoint(resource);
-    const response = await fetch(`${endpoint}/${params.id}`, {
-      method: 'DELETE',
-      headers: getHeaders(),
-    });
-    await handleResponse(response);
-    return { data: params.previousData } as any;
+    return { data: params.previousData ?? { id: params.id } } as DeleteResult;
   },
 
   deleteMany: async (resource, params) => {

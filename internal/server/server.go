@@ -1,3 +1,6 @@
+// Package server assembles the HTTP server, registers webhook routes from the
+// database, and handles graceful shutdown. It is the composition root that wires
+// together all internal packages (auth, api, provider, analyzer, mcp, webui).
 package server
 
 import (
@@ -22,7 +25,7 @@ import (
 
 type Server struct {
 	cfg        *config.Config
-	database   *db.DB
+	database   db.Store
 	registry   *provider.Registry
 	analyzer   *analyzer.Analyzer
 	auth       *auth.Auth

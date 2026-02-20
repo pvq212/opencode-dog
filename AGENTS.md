@@ -1,120 +1,201 @@
-# 專案知識庫
+# Project Knowledge Base
 
-## 概覽
+## Overview
 
-多渠道 AI 程式碼分析機器人。透過 GitLab / Slack / Telegram Webhook 觸發 OpenCode CLI 分析，結果回覆至來源渠道。Go 後端 + React Admin 前端，前端編譯後以 `go:embed` 嵌入單一二進位檔。
+Multi-channel AI code analysis bot. Receives webhooks from GitLab / Slack / Telegram, triggers analysis via OpenCode Server HTTP API, and replies to the originating channel. Go backend + React Admin frontend, frontend compiled and embedded into a single binary via `go:embed`.
 
-## 架構流程
+## Architecture Flow
 
 ```
-Webhook 請求 → Provider 層（驗證 + 解析）→ Analyzer（HTTP 呼叫 OpenCode Server）→ 結果回寫渠道
-                                                                ↕               ↕
-                                                        PostgreSQL（所有設定） OpenCode Server (Docker)
-                                                                ↑
-                                                     React Admin WebUI（嵌入 Go binary）
+Webhook Request → Provider Layer (validate + parse) → Analyzer (HTTP call to OpenCode Server) → Reply to channel
+                                                                  ↕                ↕
+                                                          PostgreSQL (all config)  OpenCode Server (Docker)
+                                                                  ↑
+                                                       React Admin WebUI (embedded in Go binary)
 ```
 
-## 結構
+## Project Structure
 
 ```
 opencode-dog/
-├── cmd/server/main.go          # 入口點（config → server → 自動 migration → 啟動）
+├── cmd/server/main.go              # Entry point (config → server → auto migration → start)
 ├── internal/
-│   ├── config/                  # 環境變數載入（僅基礎設施設定）
-│   ├── auth/                    # HMAC Token 認證 + RBAC 中介層（admin/editor/viewer）
-│   ├── db/                      # PostgreSQL CRUD（pgx v5 連線池）— 536 行核心
-│   ├── provider/                # 渠道抽象層（介面 + GitLab/Slack/Telegram 實作）
-│   ├── analyzer/                # OpenCode CLI 子程序（寫入設定檔 → 執行 → 解析輸出）
-│   ├── api/                     # REST API 端點 + Auth Middleware — 721 行
-│   ├── mcp/                     # MCP Protocol 伺服器（mcp-go，提供 5 個 tool）
-│   ├── mcpmgr/                  # MCP npm 套件安裝/移除管理
-│   ├── server/                  # HTTP Server 組裝 + Webhook 路由註冊 + 優雅關閉
-│   └── webui/                   # go:embed 嵌入前端靜態檔
-├── web/                         # React Admin 前端（TypeScript + Vite + MUI）
-├── migrations/001_init.sql      # 資料庫 Schema（9 張表 + 2 個 enum）
-├── Dockerfile                   # 多階段建置（Go builder → Node.js 22 runtime）
-└── docker-compose.yml           # PostgreSQL 16 + App 服務
+│   ├── config/                     # Environment variable loading (infrastructure only)
+│   ├── auth/                       # HMAC token auth + RBAC middleware (admin/editor/viewer)
+│   │   ├── auth.go                 #   Login, token generation, middleware, password hashing
+│   │   └── hmac.go                 #   HMAC encode/decode primitives
+│   ├── db/                         # PostgreSQL CRUD (pgx v5 connection pool)
+│   │   ├── store.go                #   Store interface (95 methods) — central abstraction
+│   │   ├── models.go               #   9 model structs + enum constants
+│   │   ├── db.go                   #   DB struct, New(), Close(), RunMigrations()
+│   │   ├── dbmock/store.go         #   In-memory mock Store for unit testing
+│   │   └── {entity}.go             #   Per-entity CRUD (project, user, task, ssh_key, etc.)
+│   ├── provider/                   # Channel abstraction layer (interface + implementations)
+│   │   ├── types.go                #   Provider interface + IncomingMessage + TriggerMode
+│   │   ├── registry.go             #   Thread-safe provider registry
+│   │   ├── gitlab.go               #   GitLab Note Event webhook handler
+│   │   ├── slack.go                #   Slack Event API webhook handler
+│   │   └── telegram.go             #   Telegram Bot API webhook handler
+│   ├── analyzer/                   # OpenCode Server HTTP client
+│   │   ├── analyzer.go             #   Keyword matching + analysis orchestration
+│   │   └── opencode_client.go      #   Session management + synchronous message sending
+│   ├── api/                        # REST API endpoints (split into per-resource handlers)
+│   │   ├── api.go                  #   API struct, New(), RegisterRoutes(), helpers
+│   │   └── {resource}_handler.go   #   Per-resource handlers (auth, project, user, etc.)
+│   ├── mcp/                        # MCP Protocol server (mcp-go, exposes 5 tools)
+│   ├── mcpmgr/                     # MCP npm package install/uninstall management
+│   ├── server/                     # HTTP server assembly + webhook route registration + graceful shutdown
+│   │   ├── server.go               #   Server composition root, wires all packages
+│   │   └── mcp_handler.go          #   MCP SSE/HTTP handler adapter
+│   └── webui/                      # go:embed frontend static files
+│       └── embed.go                #   SPA file server with fallback routing
+├── web/                            # React Admin frontend (TypeScript + Vite + MUI)
+│   └── src/
+│       ├── App.tsx                 #   React Admin config (Resources, permissions)
+│       ├── Layout.tsx              #   Custom navigation menu
+│       ├── Dashboard.tsx           #   Dashboard overview
+│       ├── authProvider.ts         #   JWT auth (localStorage)
+│       ├── dataProvider.ts         #   Custom REST API client
+│       └── resources/              #   Per-entity admin pages
+├── migrations/                     # PostgreSQL schema (auto-executed on startup)
+│   ├── 001_init.sql                #   9 tables + 2 enums
+│   └── 002_opencode_server.sql     #   OpenCode Server config fields
+├── Dockerfile                      # Multi-stage build (Go builder → Node.js 22 runtime)
+└── docker-compose.yml              # PostgreSQL 16 + OpenCode Server + App
 ```
 
-## 快速定位
+## Quick Reference
 
-| 任務 | 位置 | 備註 |
-|------|------|------|
-| 新增渠道（如 Discord） | `internal/provider/` | 實作 `Provider` 介面，在 `server.go` 註冊 |
-| 修改 API 端點 | `internal/api/api.go` | `RegisterRoutes()` 集中註冊，handler 同檔 |
-| 修改資料庫 | `internal/db/db.go` + `models.go` | 手寫 SQL，無 ORM |
-| 修改觸發邏輯 | `internal/analyzer/analyzer.go` | `matchKeyword()` + 呼叫 HTTP 客戶端 |
-| OpenCode HTTP 客戶端 | `internal/analyzer/opencode_client.go` | Session 管理 + 同步訊息發送 |
-| 新增 MCP Tool | `internal/mcp/server.go` | `registerTools()` 方法 |
-| 前端頁面 | `web/src/resources/` | 每個 `.tsx` 對應一個 React Admin Resource |
-| 認證邏輯 | `internal/auth/auth.go` | 自製 HMAC Token（非標準 JWT lib） |
-| 環境變數 | `internal/config/config.go` | `getEnv()` 模式，預設值寫在程式內 |
-| 資料庫 Schema | `migrations/001_init.sql` | 啟動時自動執行，冪等設計 |
+| Task | Location | Notes |
+|------|----------|-------|
+| Add new channel (e.g. Discord) | `internal/provider/` | Implement `Provider` interface, register in `server.go` |
+| Add/modify API endpoint | `internal/api/` | Create `{resource}_handler.go`, register in `api.go` RegisterRoutes() |
+| Add database entity | `internal/db/` | Add to `models.go` + `store.go` interface + create `{entity}.go` + update `dbmock/store.go` |
+| Modify trigger logic | `internal/analyzer/analyzer.go` | `matchKeyword()` + OpenCode HTTP client call |
+| OpenCode HTTP client | `internal/analyzer/opencode_client.go` | Session management + synchronous message sending |
+| Add MCP tool | `internal/mcp/server.go` | `registerTools()` method |
+| Frontend pages | `web/src/resources/` | Each `.tsx` corresponds to a React Admin resource |
+| Auth logic | `internal/auth/auth.go` | Custom HMAC token (not a standard JWT library) |
+| Environment variables | `internal/config/config.go` | `getEnv()` pattern, defaults in code |
+| Database schema | `migrations/*.sql` | Auto-executed on startup, idempotent design |
 
-## 技術棧
+## Tech Stack
 
-| 層級 | 技術 |
-|------|------|
-| 後端 | Go 1.24、net/http（標準庫）、pgx v5 |
-| 前端 | React 19、React Admin 5.14、Vite 7、MUI 7、Monaco Editor |
-| 資料庫 | PostgreSQL 16 |
-| 認證 | HMAC Token（自製）、bcrypt 密碼雜湊 |
-| 外部 SDK | go-gitlab v0.115、mcp-go v0.44 |
-| AI 引擎 | OpenCode Server (Docker 容器，HTTP API) |
-| 容器 | Docker 多階段建置（Go builder → Node.js 22 runtime） |
+| Layer | Technology |
+|-------|------------|
+| Backend | Go 1.24, net/http (stdlib), pgx v5 |
+| Frontend | React 19, React Admin 5.14, Vite 7, MUI 7, Monaco Editor |
+| Database | PostgreSQL 16 |
+| Auth | Custom HMAC token, bcrypt password hashing |
+| External SDK | go-gitlab v0.115, mcp-go v0.44 |
+| AI Engine | OpenCode Server (Docker container, HTTP API) |
+| Container | Docker multi-stage build (Go builder → Node.js 22 runtime) |
 
-## 慣例
+## Key Design Patterns
 
-- **純標準庫 HTTP**：不用 gin/echo/chi，直接 `http.ServeMux` + `HandleFunc`
-- **無 ORM**：手寫 SQL（pgx v5），模型定義在 `db/models.go`
-- **結構化日誌**：全專案 `log/slog`（JSON handler），不用 `fmt.Println` 或 `log`
-- **設定分離**：環境變數僅管基礎設施（DB、JWT），業務設定全在 PostgreSQL
-- **前端嵌入**：Vite 輸出到 `internal/webui/dist/`，Go 用 `go:embed` 打包
-- **無測試**：專案目前沒有 `_test.go` 或前端測試
-- **無 CI/CD**：無 GitHub Actions / GitLab CI，僅 Docker Compose 部署
-- **無 Makefile**：本機開發手動執行 `go run ./cmd/server`
+### Dependency Injection via `db.Store` Interface
 
-## 禁止事項
+All packages depend on the `db.Store` interface (defined in `internal/db/store.go`) instead of the concrete `*db.DB` type. This enables unit testing with `dbmock.Store` (an in-memory mock in `internal/db/dbmock/store.go`) without a live database.
 
-- **不要用 `.env` 存業務設定** — 業務設定一律存 PostgreSQL，透過 WebUI 管理
-- **不要新增第三方 HTTP 框架** — 保持標準庫 `net/http`
-- **不要引入 ORM** — 維持手寫 SQL + pgx v5
-- **不要用 `log` 或 `fmt.Println`** — 一律 `slog.Logger`
-- **不要直接修改 `internal/webui/dist/`** — 那是建置產物，修改 `web/src/` 後重新編譯
+```
+db.Store interface (95 methods)
+    ├── *db.DB          — production PostgreSQL implementation
+    └── *dbmock.Store   — in-memory mock for testing (exported fields for state injection)
+```
 
-## 安全注意
+Consumers: auth, api, analyzer, provider (slack/telegram), mcp, mcpmgr, server — all accept `db.Store`.
 
-- `JWT_SECRET` 未設定時會生成隨機密鑰，重啟後所有 Token 失效
-- 預設帳號 `admin/admin`，首次登入務必修改密碼
-- Webhook 驗證各渠道獨立實作（GitLab token、Slack signing_secret、Telegram secret_token）
-- SSH 私鑰存於資料庫（`ssh_keys` 表），注意存取控制
+### API Handler Pattern
 
-## 指令
+Handlers are split into per-resource files (`{resource}_handler.go`) with a shared `api.go` containing the struct, constructor, route registration, and helpers (`writeJSON`, `writeErr`, `requireRole`).
+
+Routes use standard `http.ServeMux`:
+- Public routes (login) registered directly on the mux
+- Protected routes wrapped with `auth.Middleware()` for Bearer token validation
+- RBAC checked inline via `requireRole()` within each handler
+
+### Provider Registry Pattern
+
+New channels implement the `Provider` interface (4 methods: `Type`, `ValidateConfig`, `BuildHandler`, `SendReply`) and register with the thread-safe `Registry`. The server loads provider configs from the database on startup and wires webhook routes accordingly.
+
+## Conventions
+
+- **Stdlib HTTP only**: No gin/echo/chi — use `http.ServeMux` + `HandleFunc`
+- **No ORM**: Hand-written SQL (pgx v5), models in `db/models.go`
+- **Structured logging**: `log/slog` throughout (JSON handler) — never `fmt.Println` or `log`
+- **Config separation**: Environment variables for infrastructure only (DB, JWT); business config in PostgreSQL
+- **Frontend embedding**: Vite outputs to `internal/webui/dist/`, Go embeds via `go:embed`
+- **Interface-driven testing**: All DB consumers depend on `db.Store` interface, tested with `dbmock.Store`
+- **Standard library testing**: No testify/gomock — stdlib `testing` + `net/http/httptest` only
+- **No CI/CD**: No GitHub Actions / GitLab CI — Docker Compose deployment only
+
+## Testing
+
+11 test files, 120+ tests across 6 packages:
+
+| Package | Coverage | Key test areas |
+|---------|----------|----------------|
+| `auth` | 96.1% | Login, token round-trip, middleware, RBAC, password hashing, admin seeding |
+| `config` | 100% | Environment variable loading with defaults |
+| `mcp` | 95.1% | All 5 MCP tools, error handling, JSON serialization |
+| `api` | 73.3% | All 10 REST handlers, RBAC enforcement, validation, error paths |
+| `provider` | 67.8% | GitLab/Slack/Telegram webhook parsing, signature verification, registry |
+| `analyzer` | 65.2% | Keyword matching, analysis orchestration, HTTP client mocking |
 
 ```bash
-# 本機開發
+go test ./internal/... -count=1           # Run all tests
+go test ./internal/... -coverprofile=c.out # With coverage
+go tool cover -func=c.out                 # Coverage report
+```
+
+## Prohibited
+
+- **Do not use `.env` for business config** — business config goes in PostgreSQL, managed via WebUI
+- **Do not add third-party HTTP frameworks** — keep stdlib `net/http`
+- **Do not introduce ORM** — maintain hand-written SQL + pgx v5
+- **Do not use `log` or `fmt.Println`** — always `slog.Logger`
+- **Do not modify `internal/webui/dist/`** — that's a build artifact; edit `web/src/` and rebuild
+- **Do not use `as any` or `@ts-ignore` in frontend** — use proper TypeScript types
+- **Do not delete failing tests** — fix the code, not the tests
+
+## Security Notes
+
+- `JWT_SECRET` generates a random key if unset; all tokens invalidate on restart
+- Default account `admin/admin` — must change password on first login
+- Webhook verification is per-channel (GitLab token, Slack signing_secret, Telegram secret_token)
+- SSH private keys stored in database (`ssh_keys` table) — redacted from API list responses
+
+## Commands
+
+```bash
+# Local development
 cd web && npm install && npm run build && cd ..
 export DB_PASSWORD=xxx JWT_SECRET=xxx OPENCODE_CONFIG_DIR=/tmp/oc
 go run ./cmd/server
 
-# Docker 部署
-cp .env.example .env   # 編輯 DB_PASSWORD + JWT_SECRET
+# Docker deployment
+cp .env.example .env   # Edit DB_PASSWORD + JWT_SECRET
 docker compose up -d   # http://localhost:8080
 
-# 前端開發（熱更新）
-cd web && npm run dev   # 需後端同時執行
+# Frontend development (hot reload)
+cd web && npm run dev   # Backend must be running simultaneously
 
-# 前端 Lint
-cd web && npm run lint
+# Testing
+go test ./internal/... -count=1 -v     # All backend tests
+cd web && npm run lint                  # Frontend lint (0 errors expected)
+cd web && npm run build                 # Frontend build
+
+# Verification
+go vet ./...                            # Static analysis
+go build ./...                          # Build check
 ```
 
-## 注意事項
+## Runtime Notes
 
-- `analyzer.go` 透過 HTTP API 呼叫 OpenCode Server，5 分鐘超時限制
-- OpenCode Server 運行於獨立的 Docker 容器（Port 4096）
-- 設定檔（auth.json 等）會同步至共享 Volume，修改後需重啟 OpenCode Server 才會生效
-- MCP 套件安裝有 3 分鐘超時限制
-- Webhook 路由在啟動時從 DB 載入並註冊；新增 Provider 設定後需重啟才生效（或走 fallback `/hook/` 路由）
-- `internal/mcp/server.go` 的 `handleGetTask` 用迴圈掃全表查找，非直接 ID 查詢
-- 前端 `dataProvider.ts` 部分資源採用客戶端排序和分頁
-- 認證是自製 HMAC（`auth/hmac.go`），非標準 JWT 函式庫
+- `analyzer.go` calls OpenCode Server via HTTP API with a 5-minute timeout
+- OpenCode Server runs in a separate Docker container (port 4096)
+- Config files (auth.json etc.) sync to shared volume; OpenCode Server restart needed after changes
+- MCP package install has a 3-minute timeout
+- Webhook routes load from DB at startup; new provider configs need restart (or use fallback `/hook/` route)
+- Frontend `dataProvider.ts` uses client-side sorting/pagination for most resources; `tasks` uses server-side pagination
+- Auth is custom HMAC (`auth/hmac.go`), not a standard JWT library

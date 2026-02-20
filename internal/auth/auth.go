@@ -1,3 +1,8 @@
+// Package auth provides HMAC-based token authentication and RBAC middleware.
+//
+// Authentication flow: Login() validates credentials → generates HMAC token →
+// Middleware() validates token on each request → GetUser() extracts claims from context.
+// Three roles are supported: admin, editor, viewer.
 package auth
 
 import (
@@ -34,13 +39,13 @@ type TokenClaims struct {
 }
 
 type Auth struct {
-	database *db.DB
+	database db.Store
 	logger   *slog.Logger
 	secret   []byte
 	tokenTTL time.Duration
 }
 
-func New(database *db.DB, logger *slog.Logger, jwtSecret string) *Auth {
+func New(database db.Store, logger *slog.Logger, jwtSecret string) *Auth {
 	if jwtSecret == "" {
 		b := make([]byte, 32)
 		_, _ = rand.Read(b)

@@ -2,8 +2,8 @@ import { useState } from 'react';
 import {
   List, Datagrid, TextField, BooleanField, DeleteButton,
   Create, SimpleForm, TextInput, SelectInput,
-  usePermissions, FunctionField, useRecordContext, useListContext,
-  FilterForm, FilterButton, TopToolbar, CreateButton,
+  usePermissions, FunctionField, useRecordContext,
+  FilterButton, TopToolbar, CreateButton,
 } from 'react-admin';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';

@@ -1,3 +1,5 @@
+// Package mcpmgr manages installation and removal of MCP server npm packages.
+// It executes npm install/uninstall commands and tracks status in the database.
 package mcpmgr
 
 import (
@@ -12,11 +14,11 @@ import (
 )
 
 type Manager struct {
-	database *db.DB
+	database db.Store
 	logger   *slog.Logger
 }
 
-func New(database *db.DB, logger *slog.Logger) *Manager {
+func New(database db.Store, logger *slog.Logger) *Manager {
 	return &Manager{database: database, logger: logger}
 }
 

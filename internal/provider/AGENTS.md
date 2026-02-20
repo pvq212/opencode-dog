@@ -1,21 +1,21 @@
-# Provider 渠道層
+# Provider Layer
 
-## 概覽
+## Overview
 
-多渠道 Webhook 接收的抽象層。定義 `Provider` 介面，各渠道獨立實作驗證、解析、回覆邏輯。
+Multi-channel webhook abstraction. Defines `Provider` interface; each channel independently implements validation, parsing, and reply logic. 67.8% test coverage across 5 test files.
 
-## 架構
+## Architecture
 
 ```
-Provider 介面（types.go）
-    ├── GitLabProvider（gitlab.go）  — go-gitlab SDK 解析 Note Event
-    ├── SlackProvider（slack.go）    — HMAC-SHA256 驗籤 + Event API
-    └── TelegramProvider（telegram.go）— Secret Token 驗證 + Bot API
+Provider interface (types.go)
+    ├── GitLabProvider (gitlab.go)    — go-gitlab SDK parses Note Event
+    ├── SlackProvider (slack.go)      — HMAC-SHA256 signature verification + Event API
+    └── TelegramProvider (telegram.go)— Secret Token verification + Bot API
             ↕
-    Registry（registry.go）— 以 sync.RWMutex 保護的 map[ProviderType]Provider
+    Registry (registry.go)           — sync.RWMutex-protected map[ProviderType]Provider
 ```
 
-## Provider 介面
+## Provider Interface
 
 ```go
 type Provider interface {
@@ -26,29 +26,29 @@ type Provider interface {
 }
 ```
 
-## 新增渠道步驟
+## Adding a New Channel
 
-1. 在 `types.go` 新增 `ProviderXxx ProviderType = "xxx"` 常數
-2. 建立 `xxx.go`，實作 `Provider` 介面四個方法
-3. 在 `internal/server/server.go` 的 `New()` 中呼叫 `registry.Register(provider.NewXxxProvider(logger))`
-4. 對應的 Webhook 驗證邏輯寫在 `BuildHandler` 內
+1. Add `ProviderXxx ProviderType = "xxx"` constant in `types.go`
+2. Create `xxx.go`, implement all 4 `Provider` interface methods
+3. In `internal/server/server.go` `New()`, call `registry.Register(provider.NewXxxProvider(logger))`
+4. Webhook verification logic goes inside `BuildHandler`
 
-## 各渠道驗證方式
+## Channel Verification
 
-| 渠道 | 驗證方式 | 設定欄位 |
-|------|----------|----------|
-| GitLab | `X-Gitlab-Token` header 比對 | `webhook_secret` |
+| Channel | Verification | Config Fields |
+|---------|-------------|---------------|
+| GitLab | `X-Gitlab-Token` header match | `webhook_secret` |
 | Slack | `X-Slack-Signature` HMAC-SHA256 | `signing_secret` + `bot_token` |
 | Telegram | `X-Telegram-Bot-Api-Secret-Token` header | `secret_token` + `bot_token` |
 
-## 關鍵型別
+## Key Types
 
-- `IncomingMessage` — 統一的訊息結構，含 Provider/ProjectID/Body/Author/TriggerMode/ReplyMeta
-- `TriggerMode` — `ask` / `plan` / `do` 三種模式
-- `ReplyMeta` — `any` 型別，各渠道存不同回覆元資料（GitLab issue ID、Slack channel+ts、Telegram chat_id+message_id）
+- `IncomingMessage` — Unified message struct: Provider/ProjectID/Body/Author/TriggerMode/ReplyMeta
+- `TriggerMode` — `ask` / `plan` / `do`
+- `ReplyMeta` — `any` type, each channel stores different reply metadata (GitLab issue ID, Slack channel+ts, Telegram chat_id+message_id)
 
-## 注意
+## Notes
 
-- `Config` 欄位是 `json.RawMessage`，各渠道所需 key 不同，透過 `ConfigMap()` 轉 `map[string]any`
-- `Registry` 用讀寫鎖，支援並行讀取
-- Webhook 去重依賴 `db.IsWebhookProcessed()` + `db.RecordWebhookDelivery()`
+- `Config` field is `json.RawMessage`; each channel needs different keys, accessed via `ConfigMap()` → `map[string]any`
+- `Registry` uses RWMutex for concurrent read access
+- Webhook dedup relies on `db.IsWebhookProcessed()` + `db.RecordWebhookDelivery()`

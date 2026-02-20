@@ -14,13 +14,13 @@ import (
 )
 
 type TelegramProvider struct {
-	database   *db.DB
+	database   db.Store
 	logger     *slog.Logger
 	httpClient *http.Client
 	parseMode  string
 }
 
-func NewTelegramProvider(database *db.DB, logger *slog.Logger) *TelegramProvider {
+func NewTelegramProvider(database db.Store, logger *slog.Logger) *TelegramProvider {
 	timeout := database.GetSettingDuration(context.Background(), "telegram_http_timeout", 30*time.Second)
 	parseMode := database.GetSettingString(context.Background(), "telegram_parse_mode", "Markdown")
 	return &TelegramProvider{

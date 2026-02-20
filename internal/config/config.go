@@ -1,3 +1,7 @@
+// Package config loads infrastructure settings from environment variables.
+//
+// Only infrastructure concerns (database, JWT, server port) belong here.
+// All business configuration is stored in PostgreSQL and managed via the WebUI.
 package config
 
 import (

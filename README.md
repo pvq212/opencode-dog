@@ -206,23 +206,34 @@ cd web && npm run dev   # 需後端同時執行
 opencode-dog/
 ├── cmd/server/main.go              # 入口點
 ├── internal/
-│   ├── config/                     # 環境變數載入
-│   ├── auth/                       # HMAC Token 認證 + RBAC
+│   ├── config/                     # 環境變數載入（僅基礎設施）
+│   ├── auth/                       # HMAC Token 認證 + RBAC 中介層
+│   │   ├── auth.go                 #   登入、Token、中介層、密碼雜湊
+│   │   └── hmac.go                 #   HMAC 編解碼
 │   ├── db/                         # PostgreSQL CRUD（pgx v5）
+│   │   ├── store.go                #   Store 介面（95 方法）— 核心抽象
+│   │   ├── models.go               #   9 個模型 + 常數
+│   │   ├── db.go                   #   連線池、Migration
+│   │   ├── dbmock/store.go         #   記憶體內 Mock（單元測試用）
+│   │   └── {entity}.go             #   各實體 CRUD（project、user、task 等）
 │   ├── provider/                   # 渠道抽象層
-│   │   ├── types.go                #   Provider 介面定義
+│   │   ├── types.go                #   Provider 介面 + IncomingMessage
 │   │   ├── registry.go             #   Provider 註冊表
-│   │   ├── gitlab.go               #   GitLab 實作
-│   │   ├── slack.go                #   Slack 實作
-│   │   └── telegram.go             #   Telegram 實作
+│   │   ├── gitlab.go               #   GitLab Note Event
+│   │   ├── slack.go                #   Slack Event API
+│   │   └── telegram.go             #   Telegram Bot API
 │   ├── analyzer/                   # OpenCode Server HTTP 客戶端
-│   ├── api/                        # REST API 端點
-│   ├── mcp/                        # MCP Protocol 伺服器
-│   ├── mcpmgr/                     # MCP npm 套件管理
-│   ├── server/                     # HTTP Server 組裝
-│   └── webui/                      # 前端靜態檔（go:embed）
-├── web/                            # React Admin 前端原始碼
-├── migrations/                     # PostgreSQL Schema
+│   │   ├── analyzer.go             #   關鍵字比對 + 分析調度
+│   │   └── opencode_client.go      #   Session 管理 + 同步訊息
+│   ├── api/                        # REST API 端點（按資源拆分）
+│   │   ├── api.go                  #   路由註冊、共用 helper
+│   │   └── {resource}_handler.go   #   各資源 handler（10 個檔案）
+│   ├── mcp/                        # MCP Protocol 伺服器（5 個 tool）
+│   ├── mcpmgr/                     # MCP npm 套件安裝管理
+│   ├── server/                     # HTTP Server 組裝 + 優雅關閉
+│   └── webui/                      # go:embed 前端靜態檔
+├── web/                            # React Admin 前端（TypeScript + Vite）
+├── migrations/                     # PostgreSQL Schema（啟動自動執行）
 ├── Dockerfile                      # 多階段建置
 └── docker-compose.yml              # 一鍵部署
 ```
@@ -296,11 +307,55 @@ opencode-dog/
 
 ---
 
+## 🧪 測試
+
+專案包含完整的單元測試套件，透過 `db.Store` 介面與 `dbmock` 記憶體 Mock 實現無資料庫測試。
+
+### 測試覆蓋率
+
+| 套件 | 覆蓋率 | 測試項目 |
+|------|--------|----------|
+| `auth` | 96.1% | 登入、Token 往返、中介層、RBAC、密碼雜湊、預設管理員 |
+| `config` | 100% | 環境變數載入與預設值 |
+| `mcp` | 95.1% | 全部 5 個 MCP Tool、錯誤處理、JSON 序列化 |
+| `api` | 73.3% | 全部 10 個 REST handler、RBAC 權限、驗證、錯誤路徑 |
+| `provider` | 67.8% | GitLab/Slack/Telegram Webhook 解析、簽名驗證、Registry |
+| `analyzer` | 65.2% | 關鍵字比對、分析調度、HTTP 客戶端 Mock |
+
+### 執行測試
+
+```bash
+# 執行所有測試
+go test ./internal/... -count=1 -v
+
+# 附帶覆蓋率報告
+go test ./internal/... -coverprofile=coverage.out
+go tool cover -func=coverage.out
+
+# 靜態分析
+go vet ./...
+
+# 前端 Lint（預期 0 錯誤）
+cd web && npm run lint
+```
+
+### 測試架構
+
+所有測試使用標準庫 `testing` + `net/http/httptest`，無第三方測試框架。資料庫 Mock（`internal/db/dbmock/store.go`）透過導出欄位注入狀態：
+
+```go
+store := dbmock.New()
+store.Projects = []*db.Project{{ID: "p1", Name: "test"}}
+store.ErrDefault = errors.New("db error")  // 注入錯誤
+```
+
+---
+
 ## 🤝 貢獻指南
 
 歡迎任何形式的貢獻！
 
-### 開發流程
+### 開發環境設定
 
 ```bash
 # Fork & Clone
@@ -312,15 +367,63 @@ docker compose up postgres -d          # 僅啟動資料庫
 cd web && npm install && npm run build && cd ..
 export DB_PASSWORD=dev JWT_SECRET=dev OPENCODE_CONFIG_DIR=/tmp/oc
 go run ./cmd/server
+
+# 開啟瀏覽器 http://localhost:8080
+# 預設帳號 admin / admin
+```
+
+### 前端開發（Hot Reload）
+
+```bash
+# Terminal 1：啟動後端
+export DB_PASSWORD=dev JWT_SECRET=dev OPENCODE_CONFIG_DIR=/tmp/oc
+go run ./cmd/server
+
+# Terminal 2：啟動前端開發伺服器
+cd web && npm run dev
+# 開啟 http://localhost:5173（API 會自動代理到 localhost:8080）
 ```
 
 ### 新增渠道支援
 
-想加入 Discord、LINE 或其他渠道？只需三步：
+想加入 Discord、LINE 或其他渠道？步驟如下：
 
-1. 在 `internal/provider/` 實作 `Provider` 介面
-2. 在 `internal/server/server.go` 的 `New()` 中註冊
-3. 提交 PR 🎉
+1. **實作 Provider 介面**：在 `internal/provider/` 建立 `xxx.go`
+
+```go
+type XXXProvider struct {
+    logger *slog.Logger
+}
+
+func (p *XXXProvider) Type() ProviderType { return "xxx" }
+func (p *XXXProvider) ValidateConfig(cfg map[string]any) error { ... }
+func (p *XXXProvider) BuildHandler(...) http.Handler { ... }
+func (p *XXXProvider) SendReply(...) error { ... }
+```
+
+2. **註冊 Provider**：在 `internal/server/server.go` 的 `New()` 中加入
+
+```go
+registry.Register(provider.NewXXXProvider(logger))
+```
+
+3. **撰寫測試**：在 `internal/provider/xxx_test.go` 中測試 webhook 解析
+
+4. **提交 PR**
+
+### 新增 API 端點
+
+1. 建立 `internal/api/{resource}_handler.go`
+2. 在 `api.go` 的 `RegisterRoutes()` 中註冊路由
+3. 在 `api_test.go` 中新增測試（使用 `newTestEnv()` + `doRequest()` helper）
+
+### 新增資料庫實體
+
+1. 在 `internal/db/models.go` 新增結構體
+2. 在 `internal/db/store.go` 介面新增方法
+3. 建立 `internal/db/{entity}.go` 實作 SQL
+4. 在 `internal/db/dbmock/store.go` 新增 Mock 實作
+5. 在 `migrations/` 新增 SQL migration
 
 ### 開發規範
 
@@ -328,6 +431,17 @@ go run ./cmd/server
 - **資料庫**：手寫 SQL + pgx v5，不使用 ORM
 - **日誌**：一律使用 `log/slog`
 - **設定**：業務設定存資料庫，不存 .env
+- **測試**：標準庫 `testing` + `httptest`，不使用 testify/gomock
+- **前端**：TypeScript strict mode，不使用 `as any` 或 `@ts-ignore`
+
+### 提交前檢查
+
+```bash
+go build ./...                          # 編譯通過
+go vet ./...                            # 靜態分析通過
+go test ./internal/... -count=1         # 所有測試通過
+cd web && npm run lint && npm run build  # 前端 Lint + 建置通過
+```
 
 ---
 

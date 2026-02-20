@@ -1,3 +1,8 @@
+// Package provider defines the channel abstraction layer for webhook-driven integrations.
+//
+// Each channel (GitLab, Slack, Telegram) implements the Provider interface, which
+// handles webhook validation, message parsing, and reply delivery. New channels
+// can be added by implementing Provider and registering with the Registry.
 package provider
 
 import (

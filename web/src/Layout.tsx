@@ -32,7 +32,7 @@ const AppMenu = () => {
   );
 };
 
-const AppLayout = (props: any) => (
+const AppLayout = (props: React.ComponentProps<typeof Layout>) => (
   <Layout {...props} menu={AppMenu} />
 );
 
